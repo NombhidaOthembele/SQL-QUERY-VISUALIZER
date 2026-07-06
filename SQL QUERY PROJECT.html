@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SQL Query Visualizer</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117; --panel:#161b22; --border:#30363d; --accent:#58a6ff;
+      --accent2:#f78166; --green:#3fb950; --purple:#bc8cff; --yellow:#e3b341;
+      --text:#c9d1d9; --muted:#8b949e; --keyword:#ff7b72; --string:#a5d6ff;
+      --func:#d2a8ff; --number:#79c0ff;
+      --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif;
+    }
+    body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column;}
+    header{padding:1.25rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--panel);}
+    .logo{display:flex;align-items:center;gap:0.75rem;}
+    .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--purple));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;}
+    .logo-text{font-weight:700;font-size:1rem;}
+    .logo-sub{font-size:0.7rem;color:var(--muted);font-family:var(--mono);}
+    .badge{font-family:var(--mono);font-size:0.65rem;padding:0.2rem 0.6rem;background:rgba(88,166,255,0.1);color:var(--accent);border:1px solid rgba(88,166,255,0.3);border-radius:4px;}
+    main{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;gap:0;}
+    .samples-bar{grid-column:1/-1;padding:0.75rem 1.5rem;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
+    .samples-label{font-size:0.75rem;color:var(--muted);font-family:var(--mono);}
+    .sample-btn{font-family:var(--mono);font-size:0.7rem;padding:0.3rem 0.75rem;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;transition:all 0.2s;}
+    .sample-btn:hover,.sample-btn.active{background:rgba(88,166,255,0.1);border-color:var(--accent);color:var(--accent);}
+    .editor-pane{border-right:1px solid var(--border);display:flex;flex-direction:column;}
+    .pane-header{padding:0.75rem 1.25rem;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+    .pane-title{font-size:0.75rem;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+    .run-btn{padding:0.4rem 1.1rem;background:var(--green);color:#0d1117;font-size:0.8rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;font-family:var(--sans);transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;}
+    .run-btn:hover{background:#56d364;transform:translateY(-1px);box-shadow:0 4px 12px rgba(63,185,80,0.3);}
+    #sql-input{flex:1;background:var(--bg);color:var(--text);border:none;outline:none;font-family:var(--mono);font-size:0.85rem;line-height:1.8;padding:1.25rem;resize:none;tab-size:2;}
+    .visual-pane{display:flex;flex-direction:column;}
+    #visual-area{flex:1;padding:1.5rem;overflow-y:auto;}
+
+    /* ─── PARSE TREE NODES ─── */
+    .tree-wrap{display:flex;flex-direction:column;gap:1.25rem;}
+    .clause-block{background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden;animation:slideIn 0.3s ease both;}
+    @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+    .clause-header{padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;border-bottom:1px solid var(--border);}
+    .clause-kw{font-family:var(--mono);font-size:0.75rem;font-weight:600;padding:0.2rem 0.65rem;border-radius:4px;letter-spacing:0.05em;}
+    .kw-select{background:rgba(255,123,114,0.12);color:var(--keyword);}
+    .kw-from{background:rgba(88,166,255,0.12);color:var(--accent);}
+    .kw-join{background:rgba(188,140,255,0.12);color:var(--purple);}
+    .kw-where{background:rgba(227,179,65,0.12);color:var(--yellow);}
+    .kw-group{background:rgba(63,185,80,0.12);color:var(--green);}
+    .kw-having{background:rgba(247,129,102,0.12);color:var(--accent2);}
+    .kw-order{background:rgba(165,214,255,0.12);color:var(--string);}
+    .kw-limit{background:rgba(139,148,158,0.12);color:var(--muted);}
+    .clause-desc{font-size:0.72rem;color:var(--muted);}
+    .clause-body{padding:0.75rem 1rem;display:flex;flex-wrap:wrap;gap:0.5rem;}
+    .token{font-family:var(--mono);font-size:0.78rem;padding:0.25rem 0.65rem;border-radius:6px;border:1px solid transparent;}
+    .token-col{background:rgba(88,166,255,0.08);color:var(--accent);border-color:rgba(88,166,255,0.2);}
+    .token-table{background:rgba(63,185,80,0.08);color:var(--green);border-color:rgba(63,185,80,0.2);}
+    .token-func{background:rgba(188,140,255,0.08);color:var(--func);border-color:rgba(188,140,255,0.2);}
+    .token-cond{background:rgba(227,179,65,0.08);color:var(--yellow);border-color:rgba(227,179,65,0.2);}
+    .token-val{background:rgba(165,214,255,0.08);color:var(--string);border-color:rgba(165,214,255,0.2);}
+    .token-alias{font-style:italic;color:var(--muted);border-color:var(--border);}
+    .token-join-type{background:rgba(247,129,102,0.08);color:var(--accent2);border-color:rgba(247,129,102,0.2);}
+
+    /* ─── STATS BAR ─── */
+    .stats-bar{display:flex;gap:1.5rem;padding:1rem 1.5rem;background:var(--panel);border-top:1px solid var(--border);flex-wrap:wrap;}
+    .stat-item{display:flex;flex-direction:column;gap:0.15rem;}
+    .stat-v{font-family:var(--mono);font-size:1rem;font-weight:600;color:var(--accent);}
+    .stat-l{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+
+    /* ─── COMPLEXITY ─── */
+    .complexity-wrap{margin-top:1rem;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:1rem;}
+    .complexity-title{font-size:0.7rem;font-family:var(--mono);color:var(--muted);text-transform:uppercase;margin-bottom:0.75rem;letter-spacing:0.08em;}
+    .complexity-bar-wrap{background:var(--border);border-radius:4px;height:6px;margin-bottom:0.5rem;}
+    .complexity-bar{height:6px;border-radius:4px;transition:width 0.8s ease;}
+    .complexity-label{font-size:0.75rem;font-weight:600;}
+
+    /* ─── EMPTY STATE ─── */
+    .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;color:var(--muted);text-align:center;padding:2rem;}
+    .empty-icon{font-size:3rem;opacity:0.3;}
+    .empty-title{font-size:1rem;font-weight:600;}
+    .empty-sub{font-size:0.8rem;line-height:1.6;}
+
+    @media(max-width:700px){main{grid-template-columns:1fr;}.editor-pane{border-right:none;border-bottom:1px solid var(--border);}}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div class="logo-text">SQL Visualizer</div>
+      <div class="logo-sub">parse &amp; understand queries</div>
+    </div>
+  </div>
+  <div class="badge">v1.0 · by Kwazi N.</div>
+</header>
+
+<main>
+  <div class="samples-bar">
+    <span class="samples-label">Samples:</span>
+    <button class="sample-btn active" onclick="loadSample('basic')">Basic SELECT</button>
+    <button class="sample-btn" onclick="loadSample('join')">JOIN Query</button>
+    <button class="sample-btn" onclick="loadSample('agg')">Aggregation</button>
+    <button class="sample-btn" onclick="loadSample('subquery')">Subquery</button>
+  </div>
+
+  <div class="editor-pane">
+    <div class="pane-header">
+      <span class="pane-title">📝 SQL Editor</span>
+      <button class="run-btn" onclick="runQuery()">▶ Analyse</button>
+    </div>
+    <textarea id="sql-input" spellcheck="false" placeholder="-- Type or paste your SQL query here...
+SELECT ..."></textarea>
+  </div>
+
+  <div class="visual-pane">
+    <div class="pane-header">
+      <span class="pane-title">🔍 Query Breakdown</span>
+    </div>
+    <div id="visual-area">
+      <div class="empty">
+        <div class="empty-icon">🗃️</div>
+        <div class="empty-title">No query analysed yet</div>
+        <div class="empty-sub">Write a SQL query on the left and click Analyse,<br/>or pick a sample above.</div>
+      </div>
+    </div>
+    <div class="stats-bar" id="stats-bar" style="display:none">
+      <div class="stat-item"><div class="stat-v" id="s-clauses">0</div><div class="stat-l">Clauses</div></div>
+      <div class="stat-item"><div class="stat-v" id="s-tables">0</div><div class="stat-l">Tables</div></div>
+      <div class="stat-item"><div class="stat-v" id="s-cols">0</div><div class="stat-l">Columns</div></div>
+      <div class="stat-item"><div class="stat-v" id="s-joins">0</div><div class="stat-l">JOINs</div></div>
+      <div class="stat-item"><div class="stat-v" id="s-funcs">0</div><div class="stat-l">Functions</div></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const SAMPLES = {
+  basic: `SELECT
+  employee_id,
+  first_name,
+  last_name,
+  salary,
+  department_id
+FROM employees
+WHERE salary > 50000
+  AND department_id IN (1, 2, 3)
+ORDER BY salary DESC
+LIMIT 10;`,
+  join: `SELECT
+  e.first_name,
+  e.last_name,
+  d.department_name,
+  m.first_name AS manager_name
+FROM employees e
+INNER JOIN departments d
+  ON e.department_id = d.department_id
+LEFT JOIN employees m
+  ON e.manager_id = m.employee_id
+WHERE d.location_id = 1700
+ORDER BY e.last_name ASC;`,
+  agg: `SELECT
+  d.department_name,
+  COUNT(e.employee_id) AS headcount,
+  AVG(e.salary) AS avg_salary,
+  MAX(e.salary) AS top_salary,
+  SUM(e.salary) AS total_payroll
+FROM employees e
+INNER JOIN departments d
+  ON e.department_id = d.department_id
+GROUP BY d.department_name
+HAVING AVG(e.salary) > 60000
+ORDER BY avg_salary DESC;`,
+  subquery: `SELECT
+  first_name,
+  last_name,
+  salary
+FROM employees
+WHERE salary > (
+  SELECT AVG(salary)
+  FROM employees
+  WHERE department_id = 50
+)
+  AND department_id != 50
+ORDER BY salary DESC
+LIMIT 5;`
+};
+
+function loadSample(key) {
+  document.querySelectorAll('.sample-btn').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('sql-input').value = SAMPLES[key];
+  runQuery();
+}
+
+// ─── PARSER ───
+function parseSQL(sql) {
+  const up = sql.toUpperCase().replace(/\s+/g,' ').trim();
+
+  function extract(keyword, stops) {
+    const kw = keyword.toUpperCase();
+    const idx = up.indexOf(kw);
+    if(idx === -1) return null;
+    let after = up.slice(idx + kw.length).trim();
+    let raw = sql.slice(sql.toUpperCase().indexOf(kw) + kw.length).trim();
+    for(const stop of stops) {
+      const si = after.indexOf(stop);
+      if(si !== -1) { raw = raw.slice(0, si); after = after.slice(0, si); }
+    }
+    return raw.trim();
+  }
+
+  const clauses = [];
+  const STOPS = ['SELECT','FROM','WHERE','INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','JOIN','GROUP BY','HAVING','ORDER BY','LIMIT'];
+
+  // SELECT
+  const selRaw = extract('SELECT', STOPS.filter(s=>s!=='SELECT'));
+  if(selRaw) {
+    const cols = selRaw.split(',').map(c=>c.trim()).filter(Boolean);
+    clauses.push({type:'SELECT', items: cols.map(c=>{
+      const fns = c.match(/\w+\s*\(/g);
+      return {label: c, kind: fns ? 'func' : 'col'};
+    })});
+  }
+
+  // FROM
+  const fromRaw = extract('FROM', STOPS.filter(s=>s!=='FROM'));
+  if(fromRaw) {
+    const tables = fromRaw.split(',').map(t=>t.trim()).filter(t=>t && !t.startsWith('('));
+    clauses.push({type:'FROM', items: tables.map(t=>({label:t,kind:'table'}))});
+  }
+
+  // JOINs
+  const joinTypes = ['INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','JOIN'];
+  const upLines = sql.replace(/\n/g,' ');
+  for(const jt of joinTypes) {
+    let pos = 0;
+    while(true) {
+      const idx = up.indexOf(jt, pos);
+      if(idx === -1) break;
+      let raw = sql.slice(idx + jt.length).trim();
+      for(const stop of STOPS.filter(s=>s!==jt)) {
+        const si = raw.toUpperCase().indexOf(stop);
+        if(si !== -1) raw = raw.slice(0, si);
+      }
+      clauses.push({type:'JOIN', joinKind: jt, items:[
+        {label: jt, kind:'join-type'},
+        {label: raw.trim().split(/\s+ON\s+/i)[0].trim(), kind:'table'},
+        ...(raw.includes(' ON ') || raw.toUpperCase().includes(' ON ') ?
+          [{label:'ON '+raw.split(/\s+ON\s+/i)[1]?.trim(), kind:'cond'}] : [])
+      ]});
+      pos = idx + 1;
+    }
+  }
+
+  // WHERE
+  const whereRaw = extract('WHERE', STOPS.filter(s=>s!=='WHERE'));
+  if(whereRaw) {
+    const conds = whereRaw.split(/\bAND\b|\bOR\b/i).map(c=>c.trim()).filter(Boolean);
+    clauses.push({type:'WHERE', items: conds.map(c=>({label:c.trim(),kind:'cond'}))});
+  }
+
+  // GROUP BY
+  const grpRaw = extract('GROUP BY', STOPS.filter(s=>s!=='GROUP BY'));
+  if(grpRaw) clauses.push({type:'GROUP BY', items: grpRaw.split(',').map(c=>({label:c.trim(),kind:'col'}))});
+
+  // HAVING
+  const havRaw = extract('HAVING', STOPS.filter(s=>s!=='HAVING'));
+  if(havRaw) clauses.push({type:'HAVING', items:[{label:havRaw.trim(),kind:'cond'}]});
+
+  // ORDER BY
+  const ordRaw = extract('ORDER BY', STOPS.filter(s=>s!=='ORDER BY'));
+  if(ordRaw) clauses.push({type:'ORDER BY', items: ordRaw.split(',').map(c=>({label:c.trim(),kind:'col'}))});
+
+  // LIMIT
+  const limRaw = extract('LIMIT', []);
+  if(limRaw) clauses.push({type:'LIMIT', items:[{label:limRaw.trim(),kind:'val'}]});
+
+  return clauses;
+}
+
+const DESC = {
+  SELECT:'Columns / expressions to retrieve',
+  FROM:'Source table(s)',
+  JOIN:'Table join — combines rows from multiple tables',
+  'GROUP BY':'Group rows by column value',
+  WHERE:'Filter rows before aggregation',
+  HAVING:'Filter groups after aggregation',
+  'ORDER BY':'Sort the result set',
+  LIMIT:'Restrict number of rows returned'
+};
+
+const KW_CLASS = {
+  SELECT:'kw-select', FROM:'kw-from', JOIN:'kw-join',
+  WHERE:'kw-where','GROUP BY':'kw-group', HAVING:'kw-having',
+  'ORDER BY':'kw-order', LIMIT:'kw-limit'
+};
+
+function tokenClass(kind) {
+  return {col:'token-col',table:'token-table',func:'token-func',cond:'token-cond',
+    val:'token-val',alias:'token-alias','join-type':'token-join-type'}[kind] || 'token-col';
+}
+
+function complexity(clauses) {
+  let score = 0;
+  clauses.forEach(c => {
+    if(c.type==='JOIN') score += 25;
+    if(c.type==='WHERE') score += 10 * c.items.length;
+    if(c.type==='HAVING') score += 15;
+    if(c.type==='GROUP BY') score += 10;
+    if(c.type==='SELECT') score += 5 * c.items.filter(i=>i.kind==='func').length;
+  });
+  const pct = Math.min(score, 100);
+  const label = pct < 20 ? 'Simple' : pct < 50 ? 'Moderate' : pct < 80 ? 'Complex' : 'Very Complex';
+  const color = pct < 20 ? '#3fb950' : pct < 50 ? '#e3b341' : pct < 80 ? '#f78166' : '#ff7b72';
+  return {pct, label, color};
+}
+
+function runQuery() {
+  const sql = document.getElementById('sql-input').value.trim();
+  if(!sql) return;
+  const clauses = parseSQL(sql);
+  const area = document.getElementById('visual-area');
+
+  if(!clauses.length) {
+    area.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-title">Could not parse query</div><div class="empty-sub">Make sure your SQL has SELECT...FROM structure.</div></div>`;
+    return;
+  }
+
+  let html = '<div class="tree-wrap">';
+  clauses.forEach((cl, i) => {
+    const kw = cl.type;
+    const kwClass = KW_CLASS[kw] || 'kw-select';
+    const displayKw = cl.joinKind || kw;
+    html += `<div class="clause-block" style="animation-delay:${i*0.06}s">
+      <div class="clause-header">
+        <span class="clause-kw ${kwClass}">${displayKw}</span>
+        <span class="clause-desc">${DESC[kw]||''}</span>
+      </div>
+      <div class="clause-body">
+        ${cl.items.map(tok=>`<span class="token ${tokenClass(tok.kind)}">${tok.label}</span>`).join('')}
+      </div>
+    </div>`;
+  });
+
+  // Complexity
+  const cx = complexity(clauses);
+  html += `<div class="complexity-wrap">
+    <div class="complexity-title">⚡ Query Complexity</div>
+    <div class="complexity-bar-wrap"><div class="complexity-bar" style="width:${cx.pct}%;background:${cx.color}"></div></div>
+    <span class="complexity-label" style="color:${cx.color}">${cx.label}</span>
+    <span style="font-size:0.7rem;color:var(--muted);margin-left:0.5rem">(${cx.pct}/100)</span>
+  </div>`;
+
+  html += '</div>';
+  area.innerHTML = html;
+
+  // Stats
+  const tables = clauses.filter(c=>c.type==='FROM'||c.type==='JOIN').flatMap(c=>c.items.filter(i=>i.kind==='table'));
+  const cols = clauses.filter(c=>c.type==='SELECT').flatMap(c=>c.items);
+  const joins = clauses.filter(c=>c.type==='JOIN');
+  const funcs = cols.filter(c=>c.kind==='func');
+
+  document.getElementById('s-clauses').textContent = clauses.length;
+  document.getElementById('s-tables').textContent = tables.length;
+  document.getElementById('s-cols').textContent = cols.length;
+  document.getElementById('s-joins').textContent = joins.length;
+  document.getElementById('s-funcs').textContent = funcs.length;
+  document.getElementById('stats-bar').style.display = 'flex';
+}
+
+// Load default
+document.getElementById('sql-input').value = SAMPLES.basic;
+runQuery();
+</script>
+</body>
+</html>
